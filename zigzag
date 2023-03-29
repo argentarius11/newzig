@@ -1,0 +1,224 @@
+_SECTION_BEGIN("NewZig");
+
+Title = "ZigWave";
+
+SetChartOptions(1, chartShowDates); 
+
+extdepth = Param( "ExtDepth",5 );//12
+extdeviation = Param( "ExtDeviation", 5 );//5
+extbackstep = Param( "ExtBackstep", 3 );//3
+
+SetBarsRequired( 1000 );
+
+slowmap = StaticVarGet("zig_slowmap");
+shighmap = StaticVarGet("zig_shighmap");
+
+lowmap = highmap = 0;
+g100 = g104 = 0;
+val1 = val2 = res = L36 = L44 = lasthigh = lastlow = 0;
+
+function interpolate( arr )
+{
+    n = BarCount;
+    i = 0;
+    nb = 0;
+    ne = 0;
+    t = 0;
+
+    while ( i < n )
+    {
+        while ( i < n AND arr[i] == 0 )
+            i++;
+
+        nb = i;
+
+        i++;
+
+        while ( i < n AND arr[i] == 0 )
+            i++;
+
+        if ( i >= n )
+            break;
+
+        ne = i;
+
+        t = LineArray( nb, arr[nb], ne, arr[ne] );
+
+        for ( i = nb + 1; i < ne; i++ )
+            arr[i] = t[i];
+    }
+
+    return arr;
+}
+
+
+L120 = extdepth;
+val1 = LLV( L, extdepth );
+val2 = HHV(H, extdepth );
+
+for ( L4 = L120;L4 < BarCount;L4++ )
+{
+    if ( val1[L4] == lastlow )
+        val1[L4] = 0;
+    else
+    {
+        lastlow = val1[L4];
+
+        if ( L[L4] - val1[L4] > extdeviation * TickSize )
+            val1[L4] = 0;
+        else
+        {
+            for ( L8 = 1; L8 <= extbackstep; L8++ )
+            {
+                res = lowmap[L4 - L8];
+
+                if ( res != 0 AND res > val1[L4] )
+                    lowmap[L4 - L8] = 0;
+            }
+        }
+    }
+
+    if ( Low[L4] == val1[L4] )
+        lowmap[L4] = val1[L4];
+    else
+        lowmap[L4] = 0;
+
+    if ( val2[L4] == lasthigh )
+        val2[L4] = 0;
+    else
+    {
+        lasthigh = val2[L4];
+
+        if ( val2[L4] - H[L4] > extdeviation * TickSize )
+            val2[L4] = 0;
+        else
+        {
+            for ( L8 = 1;L8 <= extbackstep;L8++ )
+            {
+                res = highmap[L4 - L8];
+
+                if ( res != 0 AND res < val2[L4] )
+                    highmap[L4 - L8] = 0;
+            }
+        }
+    }
+
+    if ( H[L4] == val2[L4] )
+        highmap[L4] = val2[L4];
+    else
+        highmap[L4] = 0;
+}
+
+lasthigh = -1;
+
+lhp = -1;
+lastlow = -1;
+llp = -1;
+
+for ( L4 = L120;L4 < BarCount;L4++ )
+{
+    L36 = lowmap[L4];
+    L44 = highmap[L4];
+
+    if ( L36 == 0 AND L44 == 0 )
+        continue;
+
+    if ( L44 != 0 )
+    {
+        if ( lasthigh > 0 )
+        {
+            if ( lasthigh < L44 )
+                highmap[lhp] = 0;
+            else
+                highmap[L4] = 0;
+        }
+
+        if ( lasthigh < L44 || lasthigh < 0 )
+        {
+            lasthigh = L44;
+            lhp = L4;
+        }
+
+        lastlow = -1;
+    }
+
+    if ( L36 != 0 )
+    {
+        if ( lastlow > 0 )
+        {
+            if ( lastlow > L36 )
+                lowmap[llp] = 0;
+            else
+                lowmap[L4] = 0;
+        }
+
+        if ( L36 < lastlow || lastlow < 0 )
+        {
+            lastlow = L36;
+            llp = L4;
+        }
+
+        lasthigh = -1;
+    }
+}
+
+for ( L4 = 0;L4 < BarCount;L4++ )
+{
+    if ( L4 < extdepth )
+    {
+        lowmap[L4] = 0;
+    }
+    else
+    { 
+		 slowmap[L4] = lowmap[L4];
+        res = highmap[L4];
+        if ( res > 0 )
+        {
+            lowmap[L4] = res;
+			  shighmap[L4] = res;
+        }
+    }
+}
+zig_last_price=-1;
+zig_last_phase=-1;
+
+
+
+for (L4 = BarCount-1;L4 > 0;L4--)
+{
+	if(slowmap[L4]!=0)
+	{
+		zig_last_price=slowmap[L4];
+		zig_last_phase=0;
+		slowmap[L4]=0;
+		break;
+	}
+	if(shighmap[L4]!=0)
+	{
+		zig_last_price=shighmap[L4];
+		zig_last_phase=1;
+		shighmap[L4]=0;
+		break;
+	}
+}
+
+
+//variables
+//--------------------------
+zig_last_price; 
+zig_last_phase; //0=trough 1=peak
+//no repaint static arrays:
+slowmap;
+shighmap;
+//---------------------------
+
+
+lowmap = interpolate( lowmap );
+
+Plot( IIf( lowmap != 0, lowmap, Null ), "NewZig", colorRed, styleThick );
+Plot(C,"",colorBlack,styleBar);
+
+StaticVarSet("zig_slowmap", slowmap);
+StaticVarSet("zig_shighmap", shighmap);
+
+_SECTION_END();
